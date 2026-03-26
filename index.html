@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPD Warehouse Ops</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- External libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="header-left">
+      <div class="logo">
+        <div class="logo-dot"></div>
+        GPD WAREHOUSE OPS
+      </div>
+      <nav class="nav-tabs" id="nav-tabs">
+        <button class="nav-tab active" data-module="replenishment">
+          <span class="nav-dot" style="background:var(--warn)"></span>
+          Replenishment
+        </button>
+        <button class="nav-tab" data-module="emptybins">
+          <span class="nav-dot" style="background:var(--empty)"></span>
+          Empty Bins
+        </button>
+        <!-- Future modules will be registered here via app.js -->
+      </nav>
+    </div>
+    <div class="header-right">
+      <span class="badge">MACON · WAREHOUSE TOOL</span>
+      <span id="last-updated" class="last-updated" style="display:none"></span>
+    </div>
+  </header>
+
+  <!-- ── Main content ── -->
+  <main class="main" id="app-root">
+
+    <!-- Replenishment Module -->
+    <div id="module-replenishment" class="module active"></div>
+
+    <!-- Empty Bins Module -->
+    <div id="module-emptybins" class="module"></div>
+
+    <!-- Placeholder for future modules -->
+
+  </main>
+
+  <!-- ── Core scripts (order matters) ── -->
+  <script src="assets/js/core/utils.js"></script>
+  <script src="assets/js/core/app.js"></script>
+
+  <!-- ── Feature module scripts ── -->
+  <script src="assets/js/modules/replenishment.js"></script>
+  <script src="assets/js/modules/emptybins.js"></script>
+
+  <!-- Bootstrap the app after all modules are loaded -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => App.init());
+  </script>
+</body>
+</html>
