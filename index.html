@@ -1,13 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GPD Warehouse Ops</title>
-
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
 
   <!-- External libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -22,8 +18,8 @@
   <header>
     <div class="header-left">
       <div class="logo">
-        <div class="logo-dot"></div>
-        GPD WAREHOUSE OPS
+        <div class="logo-mark">G</div>
+        GPD Warehouse Ops
       </div>
       <nav class="nav-tabs" id="nav-tabs">
         <button class="nav-tab active" data-module="replenishment">
@@ -34,39 +30,56 @@
           <span class="nav-dot" style="background:var(--empty)"></span>
           Empty Bins
         </button>
-        <!-- Future modules will be registered here via app.js -->
+        <button class="nav-tab" data-module="processinglog">
+          <span class="nav-dot" style="background:var(--accent)"></span>
+          Processing Log
+        </button>
       </nav>
     </div>
     <div class="header-right">
-      <span class="badge">MACON · WAREHOUSE TOOL</span>
       <span id="last-updated" class="last-updated" style="display:none"></span>
+      <span class="badge">MACON · OAC</span>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark mode">🌙</button>
     </div>
   </header>
 
   <!-- ── Main content ── -->
   <main class="main" id="app-root">
-
-    <!-- Replenishment Module -->
     <div id="module-replenishment" class="module active"></div>
-
-    <!-- Empty Bins Module -->
     <div id="module-emptybins" class="module"></div>
-
-    <!-- Placeholder for future modules -->
-
+    <div id="module-processinglog" class="module"></div>
   </main>
 
-  <!-- ── Core scripts (order matters) ── -->
+  <!-- ── Core scripts ── -->
   <script src="assets/js/core/utils.js"></script>
   <script src="assets/js/core/app.js"></script>
 
-  <!-- ── Feature module scripts ── -->
+  <!-- ── Feature modules ── -->
   <script src="assets/js/modules/replenishment.js"></script>
   <script src="assets/js/modules/emptybins.js"></script>
+  <script src="assets/js/modules/processinglog.js"></script>
 
-  <!-- Bootstrap the app after all modules are loaded -->
   <script>
-    document.addEventListener('DOMContentLoaded', () => App.init());
+    document.addEventListener('DOMContentLoaded', () => {
+      App.init();
+
+      // Theme toggle
+      const toggle = document.getElementById('theme-toggle');
+      const html   = document.documentElement;
+
+      // Restore saved preference
+      const saved = localStorage.getItem('gpd-theme') || 'light';
+      html.setAttribute('data-theme', saved);
+      toggle.textContent = saved === 'dark' ? '☀️' : '🌙';
+
+      toggle.addEventListener('click', () => {
+        const current = html.getAttribute('data-theme');
+        const next    = current === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
+        toggle.textContent = next === 'dark' ? '☀️' : '🌙';
+        localStorage.setItem('gpd-theme', next);
+      });
+    });
   </script>
 </body>
 </html>

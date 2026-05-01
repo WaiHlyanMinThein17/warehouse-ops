@@ -1,21 +1,15 @@
 /**
  * replenishment.js — Replenishment Module
- *
- * Self-contained feature module for the GPD Warehouse Ops app.
- * Renders its own HTML into #module-replenishment, handles its
- * own state, and exposes nothing to the global scope except the
- * App.register() call at the bottom.
  */
 
 (() => {
 
-  /* ── Module state ── */
-  let _data     = [];   // all processed rows
-  let _filtered = [];   // after tab + search + bin range filters
+  let _data     = [];
+  let _filtered = [];
   let _tab      = 'all';
   let _sortKey  = 'qtyToHandle';
   let _sortDir  = -1;
-  let _done     = new Set(); // ids of rows marked complete
+  let _done     = new Set();
   let _donut    = null;
   let _bar      = null;
 
@@ -27,9 +21,6 @@
     ok:        'OK',
   };
 
-
-  /* ── Mount: inject HTML into the panel ── */
-
   function mount() {
     const panel = document.getElementById('module-replenishment');
     if (!panel) return;
@@ -39,34 +30,26 @@
 
   function _html() {
     return `
-    <!-- Upload view -->
     <div id="repl-upload">
-      <h1 class="page-title">Replenishment Dashboard</h1>
-      <p class="page-subtitle">
-        Upload your Business Central Movement Worksheet export to see what needs replenishment.
-      </p>
+      <div class="page-header">
+        <h1 class="page-title">Replenishment Dashboard</h1>
+        <p class="page-subtitle">Upload your Business Central Movement Worksheet export to see what needs replenishment.</p>
+      </div>
       <div class="upload-zone" id="repl-drop-zone">
         <input type="file" id="repl-file-input" accept=".xlsx,.xls,.csv">
         <div class="upload-icon">📦</div>
-        <div class="upload-title">Drop your Movement Worksheet Excel file here</div>
-        <div class="upload-sub">
-          Export from Business Central → Movement Worksheet → Open in Excel<br>
-          Accepts .xlsx, .xls, or .csv
-        </div>
+        <div class="upload-title">Drop your Movement Worksheet file here</div>
+        <div class="upload-sub">Export from Business Central → Movement Worksheet → Open in Excel<br>Accepts .xlsx, .xls, or .csv</div>
         <label class="btn btn-primary" for="repl-file-input">Choose File</label>
       </div>
-      <button class="demo-link" id="repl-demo-btn">
-        No file yet? Load sample data to explore →
-      </button>
+      <button class="demo-link" id="repl-demo-btn">No file yet? Load sample data to explore →</button>
     </div>
 
-    <!-- Dashboard view (hidden until data loaded) -->
     <div id="repl-dashboard" style="display:none">
       <div id="repl-demo-notice" class="demo-notice" style="display:none">
         ⚡ Showing sample data. Upload your real Business Central export to see live data.
       </div>
 
-      <!-- Stat cards -->
       <div class="stats-row stats-row-5">
         <div class="stat-card urgent">
           <div class="stat-label">Urgent — Move Now</div>
@@ -95,7 +78,6 @@
         </div>
       </div>
 
-      <!-- Charts -->
       <div class="charts-row">
         <div class="chart-card">
           <div class="chart-title">Status Breakdown</div>
@@ -109,17 +91,15 @@
         </div>
       </div>
 
-      <!-- Sub-tabs -->
       <div class="tabs" id="repl-tabs">
         <button class="tab active" data-tab="all">All Items</button>
         <button class="tab" data-tab="critical">🔴 Critical</button>
         <button class="tab" data-tab="low">🟡 Low Stock</button>
         <button class="tab" data-tab="predicted">🟣 Predicted</button>
-        <button class="tab" data-tab="issue">🟠 Warehouse Issue</button>
+        <button class="tab" data-tab="issue">🟠 Issue</button>
         <button class="tab" data-tab="ok">🟢 OK</button>
       </div>
 
-      <!-- Controls -->
       <div class="controls-row">
         <div class="search-bar">
           <span class="search-icon">🔍</span>
@@ -127,15 +107,14 @@
         </div>
         <div class="filter-group">
           <span>Bin range</span>
-          <input type="text" id="bin-from" placeholder="From" style="width:70px">
+          <input type="text" id="bin-from" placeholder="From" style="width:65px">
           <span class="filter-sep">→</span>
-          <input type="text" id="bin-to"   placeholder="To"   style="width:70px">
+          <input type="text" id="bin-to" placeholder="To" style="width:65px">
         </div>
         <button class="btn" id="repl-export-btn">⬇ Export Task List</button>
         <button class="btn btn-danger" id="repl-reset-btn">↺ Reset</button>
       </div>
 
-      <!-- Table -->
       <div class="table-wrap">
         <div class="table-head">
           <span class="table-title">Replenishment Items</span>
@@ -163,38 +142,23 @@
     </div>`;
   }
 
-
-  /* ── Event binding ── */
-
   function _bindEvents() {
-    // File input
     const fileInput = document.getElementById('repl-file-input');
     if (fileInput) fileInput.addEventListener('change', e => {
       if (e.target.files[0]) _handleFile(e.target.files[0]);
     });
 
-    // Drag-and-drop
     const dropZone = document.getElementById('repl-drop-zone');
     if (dropZone) Utils.setupDropZone(dropZone, _handleFile);
 
-    // Demo data
-    const demoBtn = document.getElementById('repl-demo-btn');
-    if (demoBtn) demoBtn.addEventListener('click', _loadDemo);
+    document.getElementById('repl-demo-btn')?.addEventListener('click', _loadDemo);
+    document.getElementById('repl-reset-btn')?.addEventListener('click', _reset);
+    document.getElementById('repl-export-btn')?.addEventListener('click', _export);
 
-    // Reset
-    const resetBtn = document.getElementById('repl-reset-btn');
-    if (resetBtn) resetBtn.addEventListener('click', _reset);
-
-    // Export
-    const exportBtn = document.getElementById('repl-export-btn');
-    if (exportBtn) exportBtn.addEventListener('click', _export);
-
-    // Search + bin filter (delegated)
     document.getElementById('module-replenishment').addEventListener('input', e => {
       if (['repl-search','bin-from','bin-to'].includes(e.target.id)) _applyFilters();
     });
 
-    // Sub-tabs (delegated)
     const tabs = document.getElementById('repl-tabs');
     if (tabs) tabs.addEventListener('click', e => {
       const btn = e.target.closest('.tab');
@@ -205,7 +169,6 @@
       _applyFilters();
     });
 
-    // Column sort (delegated)
     const thead = document.querySelector('#module-replenishment thead');
     if (thead) thead.addEventListener('click', e => {
       const th = e.target.closest('th[data-sort]');
@@ -216,7 +179,6 @@
       _applyFilters();
     });
 
-    // Check-done (delegated on tbody)
     const tbody = document.getElementById('repl-table-body');
     if (tbody) tbody.addEventListener('click', e => {
       const btn = e.target.closest('.check-btn');
@@ -227,9 +189,6 @@
     });
   }
 
-
-  /* ── File handling ── */
-
   async function _handleFile(file) {
     try {
       const rows = await Utils.parseExcelFile(file);
@@ -238,9 +197,6 @@
       alert('Could not read file. Make sure it is a valid .xlsx, .xls, or .csv export.');
     }
   }
-
-
-  /* ── Data processing ── */
 
   function _process(json, isDemo) {
     if (!json.length) { alert('No data found in the file.'); return; }
@@ -251,35 +207,26 @@
       const bulkBin      = String(row['From Bin Code'] || '').trim();
       const primeBin     = String(row['To Bin Code']   || '').trim();
       const qtyToHandle  = Utils.parseNum(row['Qty. to Handle']);
-      const qtyOutstand  = Utils.parseNum(row['Qty. Outstanding']);
       const availableQty = Utils.parseNum(row['Available Qty. to Move']);
       const qtyHandled   = Utils.parseNum(row['Qty. Handled']);
+      const qtyOutstand  = Utils.parseNum(row['Qty. Outstanding']);
 
       let status = 'ok';
-      if (qtyToHandle > 0 && availableQty > 0 && availableQty < qtyToHandle) {
-        status = 'issue';
-      } else if (qtyToHandle > 0) {
-        status = (availableQty > 0 && (qtyToHandle / availableQty) > 0.6) ? 'critical' : 'low';
-      } else if (availableQty > 0 && availableQty < 10) {
-        status = 'predicted';
-      }
+      if (qtyToHandle > 0 && availableQty > 0 && availableQty < qtyToHandle) status = 'issue';
+      else if (qtyToHandle > 0) status = (availableQty > 0 && (qtyToHandle / availableQty) > 0.6) ? 'critical' : 'low';
+      else if (availableQty > 0 && availableQty < 10) status = 'predicted';
 
       return { id: i, divItemNo, description, bulkBin, primeBin, qtyToHandle, availableQty, qtyHandled, qtyOutstand, status };
     }).filter(r => r.divItemNo || r.bulkBin || r.primeBin);
 
     _done.clear();
-
     document.getElementById('repl-demo-notice').style.display = isDemo ? 'flex' : 'none';
     Utils.hide('repl-upload');
     document.getElementById('repl-dashboard').style.display = 'block';
     App.setLastUpdated();
-
     _applyFilters();
     _renderCharts();
   }
-
-
-  /* ── Filtering + sorting ── */
 
   function _applyFilters() {
     const search  = (document.getElementById('repl-search')?.value || '').toLowerCase();
@@ -299,27 +246,18 @@
     _updateStats();
   }
 
-
-  /* ── Rendering ── */
-
   function _renderTable() {
     const tbody = document.getElementById('repl-table-body');
     Utils.setText('repl-row-count', _filtered.length + ' items');
 
     if (!_filtered.length) {
-      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">No items match your filters.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--muted)">No items match your filters.</td></tr>`;
       return;
     }
 
     tbody.innerHTML = _filtered.map(r => {
       const isDone = _done.has(r.id);
-      const availColor = r.status === 'issue'
-        ? 'var(--issue)'
-        : r.availableQty < 10
-          ? 'var(--urgent)'
-          : r.availableQty < 20
-            ? 'var(--warn)'
-            : 'var(--text)';
+      const availColor = r.status === 'issue' ? 'var(--issue)' : r.availableQty < 10 ? 'var(--urgent)' : r.availableQty < 20 ? 'var(--warn)' : 'var(--text)';
       const shortage = r.status === 'issue'
         ? `<span style="font-size:11px;color:var(--issue);margin-left:4px">−${r.qtyToHandle - r.availableQty} short</span>`
         : '';
@@ -330,8 +268,8 @@
         <td>${Utils.binChip(r.bulkBin)}</td>
         <td class="arrow-sep">→</td>
         <td>${Utils.binChip(r.primeBin)}</td>
-        <td style="font-family:var(--font-mono);font-size:14px;font-weight:500">${Utils.fmtQty(r.qtyToHandle)}</td>
-        <td style="font-family:var(--font-mono);font-size:13px;color:${availColor}">${Utils.fmtQty(r.availableQty)}${shortage}</td>
+        <td style="font-family:var(--font-mono);font-size:13px;font-weight:600">${Utils.fmtQty(r.qtyToHandle)}</td>
+        <td style="font-family:var(--font-mono);font-size:12px;color:${availColor}">${Utils.fmtQty(r.availableQty)}${shortage}</td>
         <td>${Utils.statusBadge(r.status, STATUS_LABELS[r.status])}</td>
         <td><button class="check-btn ${isDone ? 'done' : ''}" data-id="${r.id}">${isDone ? '✓' : ''}</button></td>
       </tr>`;
@@ -341,49 +279,43 @@
   function _updateStats() {
     const c = { critical: 0, low: 0, predicted: 0, ok: 0, issue: 0 };
     _data.forEach(r => c[r.status]++);
-    Utils.setText('stat-critical', c.critical);
-    Utils.setText('stat-low',      c.low);
+    Utils.setText('stat-critical',  c.critical);
+    Utils.setText('stat-low',       c.low);
     Utils.setText('stat-predicted', c.predicted);
-    Utils.setText('stat-ok',       c.ok);
-    Utils.setText('stat-issue',    c.issue);
+    Utils.setText('stat-ok',        c.ok);
+    Utils.setText('stat-issue',     c.issue);
   }
 
   function _renderCharts() {
     const c = { critical: 0, low: 0, predicted: 0, ok: 0, issue: 0 };
     _data.forEach(r => c[r.status]++);
 
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+    const labelColor = isDark ? '#6b7280' : '#9ca3af';
+
     if (_donut) _donut.destroy();
     _donut = new Chart(document.getElementById('repl-donut'), {
       type: 'doughnut',
       data: {
-        labels: ['Urgent', 'Replenish', 'Watch', 'Check Bin', 'OK'],
+        labels: ['Urgent','Replenish','Watch','Check Bin','OK'],
         datasets: [{
           data: [c.critical, c.low, c.predicted, c.issue, c.ok],
-          backgroundColor: ['#ef4444','#f59e0b','#8b5cf6','#f97316','#10b981'],
-          borderColor: '#161b26',
+          backgroundColor: ['#dc2626','#d97706','#7c3aed','#ea580c','#059669'],
+          borderColor: isDark ? '#161b26' : '#ffffff',
           borderWidth: 3,
           hoverOffset: 4,
         }],
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: '68%',
+        responsive: true, maintainAspectRatio: false, cutout: '68%',
         plugins: {
-          legend: {
-            display: true,
-            position: 'right',
-            labels: { color: '#6b7280', font: { size: 11 }, boxWidth: 10, padding: 12 },
-          },
+          legend: { display: true, position: 'right', labels: { color: labelColor, font: { size: 11 }, boxWidth: 10, padding: 10 } }
         },
       },
     });
 
-    const top10 = [..._data]
-      .filter(r => r.qtyToHandle > 0)
-      .sort((a, b) => b.qtyToHandle - a.qtyToHandle)
-      .slice(0, 10);
-
+    const top10 = [..._data].filter(r => r.qtyToHandle > 0).sort((a,b) => b.qtyToHandle - a.qtyToHandle).slice(0, 10);
     if (_bar) _bar.destroy();
     _bar = new Chart(document.getElementById('repl-bar'), {
       type: 'bar',
@@ -392,27 +324,21 @@
         datasets: [{
           label: 'Suggested Qty',
           data: top10.map(r => r.qtyToHandle),
-          backgroundColor: top10.map(r => r.status === 'critical' ? '#ef444480' : '#f59e0b80'),
-          borderColor:     top10.map(r => r.status === 'critical' ? '#ef4444'   : '#f59e0b'),
-          borderWidth: 1,
-          borderRadius: 4,
+          backgroundColor: top10.map(r => r.status === 'critical' ? '#dc262680' : '#d9770680'),
+          borderColor:     top10.map(r => r.status === 'critical' ? '#dc2626'   : '#d97706'),
+          borderWidth: 1, borderRadius: 3,
         }],
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false, indexAxis: 'y',
         plugins: { legend: { display: false } },
         scales: {
-          x: { ticks: { color: '#6b7280', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
-          y: { ticks: { color: '#9ca3af', font: { size: 11, family: 'IBM Plex Mono' } }, grid: { display: false } },
+          x: { ticks: { color: labelColor, font: { size: 11 } }, grid: { color: gridColor } },
+          y: { ticks: { color: labelColor, font: { size: 11, family: 'Consolas, monospace' } }, grid: { display: false } },
         },
       },
     });
   }
-
-
-  /* ── Actions ── */
 
   function _export() {
     const pending = _filtered.filter(r => !_done.has(r.id));
@@ -439,51 +365,29 @@
 
   function _loadDemo() {
     const items = [
-      { d: '3411432', desc: 'EXPANSION VALVE BLOCK' },
-      { d: '3411942', desc: 'EXPANSION VALVE BLOCK' },
-      { d: '3411966', desc: 'EXPANSION VALVE BLOCK' },
-      { d: '3412028', desc: 'EXP BLOCK 19-22 FORESTER' },
-      { d: '3412036', desc: 'EXPANSION VALVE BLOCK HYUNDAI KIA' },
-      { d: '1311352', desc: 'A/C COMPRESSOR' },
-      { d: '1311489', desc: 'A/C COMPRESSOR W/CLUTCH' },
-      { d: '2811044', desc: 'CONDENSER' },
-      { d: '2811210', desc: 'PARALLEL FLOW CONDENSER' },
-      { d: '4811032', desc: 'ACCUMULATOR DRIER' },
-      { d: '4811198', desc: 'FILTER DRIER' },
-      { d: '5811055', desc: 'EVAPORATOR CORE' },
-      { d: '6811021', desc: 'BLOWER MOTOR' },
-      { d: '6811089', desc: 'BLOWER MOTOR W/WHEEL' },
-      { d: '7811003', desc: 'O-RING KIT AC SYSTEM' },
-      { d: '7811019', desc: 'RAPID SEAL O-RING KIT' },
+      { d:'3411432', desc:'EXPANSION VALVE BLOCK' }, { d:'3411942', desc:'EXPANSION VALVE BLOCK' },
+      { d:'3411966', desc:'EXPANSION VALVE BLOCK' }, { d:'3412028', desc:'EXP BLOCK 19-22 FORESTER' },
+      { d:'3412036', desc:'EXPANSION VALVE BLOCK HYUNDAI KIA' }, { d:'1311352', desc:'A/C COMPRESSOR' },
+      { d:'1311489', desc:'A/C COMPRESSOR W/CLUTCH' }, { d:'2811044', desc:'CONDENSER' },
+      { d:'2811210', desc:'PARALLEL FLOW CONDENSER' }, { d:'4811032', desc:'ACCUMULATOR DRIER' },
+      { d:'4811198', desc:'FILTER DRIER' }, { d:'5811055', desc:'EVAPORATOR CORE' },
+      { d:'6811021', desc:'BLOWER MOTOR' }, { d:'6811089', desc:'BLOWER MOTOR W/WHEEL' },
+      { d:'7811003', desc:'O-RING KIT AC SYSTEM' }, { d:'7811019', desc:'RAPID SEAL O-RING KIT' },
     ];
-
     const rows = items.map((item, i) => {
-      const avail = i % 4 === 0 ? Math.floor(Math.random() * 3) + 1 : Math.floor(Math.random() * 40) + 5;
-      const qty   = i % 4 === 0 ? Math.floor(Math.random() * 50) + 20 : Math.floor(Math.random() * 10) + 1;
+      const avail = i % 4 === 0 ? Math.floor(Math.random()*3)+1 : Math.floor(Math.random()*40)+5;
+      const qty   = i % 4 === 0 ? Math.floor(Math.random()*50)+20 : Math.floor(Math.random()*10)+1;
       return {
-        'Division item No.': item.d,
-        'Item No.': 'H17-' + item.d,
-        'Description': item.desc,
-        'From Bin Code': `BSP${String(1010 + i).padStart(4, '0')}${['A','B','C','K','J'][i % 5]}`,
-        'To Bin Code':   `SP${String(1010 + i).padStart(4, '0')}${['A','B','C','D'][i % 4]}`,
-        'Qty. to Handle': qty,
-        'Qty. Outstanding': qty,
-        'Available Qty. to Move': avail,
-        'Qty. Handled': 0,
+        'Division item No.': item.d, 'Description': item.desc,
+        'From Bin Code': `BSP${String(1010+i).padStart(4,'0')}${['A','B','C','K','J'][i%5]}`,
+        'To Bin Code':   `SP${String(1010+i).padStart(4,'0')}${['A','B','C','D'][i%4]}`,
+        'Qty. to Handle': qty, 'Qty. Outstanding': qty,
+        'Available Qty. to Move': avail, 'Qty. Handled': 0,
       };
     });
-
     _process(rows, true);
   }
 
-
-  /* ── Register with App ── */
-
-  App.register({
-    id:       'replenishment',
-    label:    'Replenishment',
-    dotColor: 'var(--warn)',
-    mount,
-  });
+  App.register({ id: 'replenishment', label: 'Replenishment', dotColor: 'var(--warn)', mount });
 
 })();

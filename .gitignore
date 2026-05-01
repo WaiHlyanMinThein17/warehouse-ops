@@ -6,13 +6,19 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
-*.swo
 
-# Local test data (never commit real warehouse exports)
+# Never commit real warehouse data exports
 *.xlsx
 *.xls
 *.csv
 !docs/
 
-# Node (if you add a dev server later)
+# Node
 node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+venv/
