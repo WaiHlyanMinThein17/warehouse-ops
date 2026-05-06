@@ -47,7 +47,7 @@
         <div style="margin-bottom:16px">
           <label style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px">Station</label>
           <div style="display:flex;gap:8px;flex-wrap:wrap" id="station-btns">
-            ${['MCN2','MCN3','MCN4','MCN5','MCN6'].map((s,i) =>
+            ${['MCN1','MCN2','MCN3','MCN4','MCN5','MCN6'].map((s,i) =>
               `<button class="station-btn ${i===0?'active':''}" data-station="${s}"
                 style="padding:8px 16px;border-radius:var(--radius-md);border:1px solid var(--border2);
                 background:${i===0?'var(--accent)':'var(--bg3)'};
