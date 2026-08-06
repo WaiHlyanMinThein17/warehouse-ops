@@ -8,12 +8,14 @@ from flask import Flask, request, send_file, jsonify
 from flask.helpers import make_response
 import io
 import os
+import tempfile
 from datetime import date, timedelta
 from openpyxl import Workbook
 from openpyxl.styles import (
     Font, Alignment, Border, Side, PatternFill
 )
 from openpyxl.utils import get_column_letter
+from python_calamine import CalamineWorkbook
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 
@@ -156,6 +158,223 @@ def generate_processing_log():
     ))
     response.headers['Access-Control-Allow-Origin'] = '*'
     return response
+
+
+# ── B-Row Top Sellers Replenishment ────────────────────────────────────────────
+#
+# Joins three Business Central exports on Division Item No. to prioritise
+# replenishing the best-selling items on the B row (prime bins PB2*):
+#   1. movement    — what needs replenishing & how much (raw Movement Worksheet
+#                    or the processed "Task List" export)
+#   2. items       — the ~59MB / 425k-row catalogue, for Sales (Qty.) ranking
+#   3. bincontents — current pick-face qty + min/max per B-row bin
+#
+# The items file is parsed with python-calamine (~15s) rather than openpyxl
+# (~113s); we stream it once and keep only rows whose Division Item No. is a
+# candidate from the movement file, to bound memory.
+
+B_ROW_PREFIX = 'PB2'
+
+
+def _norm_id(v):
+    """Canonicalise a Division Item No. so joins line up across exports."""
+    if v is None:
+        return ''
+    if isinstance(v, bool):
+        return ''
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    if isinstance(v, int):
+        return str(v)
+    return str(v).strip()
+
+
+def _num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _read_sheet(storage):
+    """Save an uploaded file to a temp path and parse its first sheet with
+    calamine. Returns (header, rows) where header is a list of trimmed strings."""
+    suffix = os.path.splitext(storage.filename or '')[1] or '.xlsx'
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    try:
+        storage.save(tmp.name)
+        tmp.close()
+        wb = CalamineWorkbook.from_path(tmp.name)
+        ws = wb.get_sheet_by_name(wb.sheet_names[0])
+        data = ws.to_python(skip_empty_area=True)
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+    if not data:
+        return [], []
+    header = [str(h).strip() if h is not None else '' for h in data[0]]
+    return header, data[1:]
+
+
+def _col(header, *names):
+    for n in names:
+        if n in header:
+            return header.index(n)
+    return -1
+
+
+@app.route('/api/brow-topsellers', methods=['POST'])
+def brow_topsellers():
+    movement    = request.files.get('movement')
+    items       = request.files.get('items')
+    bincontents = request.files.get('bincontents')
+
+    if not (movement and items and bincontents):
+        return jsonify({'error': 'All three files are required: movement, items, bincontents.'}), 400
+
+    top_n_raw = (request.form.get('topN') or '50').strip().lower()
+    top_n = None if top_n_raw in ('all', '0', '') else max(1, int(_num(top_n_raw)))
+
+    # 1. Movement worksheet → B-row candidate replenishment lines ────────────────
+    hdr, rows = _read_sheet(movement)
+    m_div  = _col(hdr, 'Division item No.', 'Division Item No.', 'Division Item No', 'Division item No')
+    m_desc = _col(hdr, 'Description')
+    m_from = _col(hdr, 'From Bin Code', 'From Bin (Bulk)')
+    m_to   = _col(hdr, 'To Bin Code', 'To Bin (Prime)')
+    m_sug  = _col(hdr, 'Qty. to Handle', 'Suggested Qty')
+    m_avail = _col(hdr, 'Available Qty. to Move', 'Available in Bulk')
+
+    if m_div < 0 or m_to < 0:
+        return jsonify({'error': 'Movement file is missing a Division Item No. or prime/To bin column.'}), 400
+
+    # Aggregate by (item, prime bin) — BC often emits several movement lines for
+    # the same item/bin; summing keeps one prioritised row per pick face.
+    agg = {}
+    for r in rows:
+        to_bin = str(r[m_to]).strip() if m_to >= 0 and r[m_to] is not None else ''
+        if not to_bin.startswith(B_ROW_PREFIX):
+            continue
+        div = _norm_id(r[m_div])
+        if not div:
+            continue
+        key = (div, to_bin)
+        c = agg.get(key)
+        if c is None:
+            c = agg[key] = {
+                'divItemNo':      div,
+                'description':    (str(r[m_desc]).strip() if m_desc >= 0 and r[m_desc] is not None else ''),
+                'fromBin':        (str(r[m_from]).strip() if m_from >= 0 and r[m_from] is not None else ''),
+                'toBin':          to_bin,
+                'suggestedQty':   0,
+                'availableInBulk': 0,
+            }
+        c['suggestedQty'] += round(_num(r[m_sug])) if m_sug >= 0 else 0
+        # Available-in-bulk is item-level and repeated across lines — take the max.
+        c['availableInBulk'] = max(c['availableInBulk'], round(_num(r[m_avail])) if m_avail >= 0 else 0)
+
+    candidates = list(agg.values())
+    if not candidates:
+        return jsonify({'error': 'No B-row (PB2*) replenishment lines found in the movement file.'}), 400
+
+    candidate_ids = {c['divItemNo'] for c in candidates}
+
+    # 2. Bin Contents → current qty / min / max per B-row (div, bin) ──────────────
+    hdr, rows = _read_sheet(bincontents)
+    b_bin = _col(hdr, 'Bin Code')
+    b_div = _col(hdr, 'Division Item No.', 'Division Item No')
+    b_qty = _col(hdr, 'Quantity (Base)')
+    b_min = _col(hdr, 'Min. Qty.')
+    b_max = _col(hdr, 'Max. Qty.')
+    b_desc = _col(hdr, 'ItemDescription', 'Description')
+
+    bin_by_div_bin = {}
+    bin_by_div = {}
+    for r in rows:
+        bin_code = str(r[b_bin]).strip() if b_bin >= 0 and r[b_bin] is not None else ''
+        if not bin_code.startswith(B_ROW_PREFIX):
+            continue
+        div = _norm_id(r[b_div]) if b_div >= 0 else ''
+        if div not in candidate_ids:
+            continue
+        rec = {
+            'currentQty': round(_num(r[b_qty])) if b_qty >= 0 else 0,
+            'minQty':     round(_num(r[b_min])) if b_min >= 0 else 0,
+            'maxQty':     round(_num(r[b_max])) if b_max >= 0 else 0,
+            'bin':        bin_code,
+            'description': (str(r[b_desc]).strip() if b_desc >= 0 and r[b_desc] is not None else ''),
+        }
+        bin_by_div_bin[(div, bin_code)] = rec
+        bin_by_div.setdefault(div, rec)
+
+    # 3. Items → Sales (Qty.) for candidates only (stream the big file once) ──────
+    hdr, rows = _read_sheet(items)
+    i_div   = _col(hdr, 'Division Item No.', 'Division Item No')
+    i_sales = _col(hdr, 'Sales (Qty.)')
+    i_desc  = _col(hdr, 'Description')
+    i_qoh   = _col(hdr, 'Quantity on Hand')
+
+    sales_by_div = {}
+    if i_div >= 0:
+        for r in rows:
+            div = _norm_id(r[i_div])
+            if div in candidate_ids and div not in sales_by_div:
+                sales_by_div[div] = {
+                    'salesQty':    round(_num(r[i_sales])) if i_sales >= 0 else 0,
+                    'description': (str(r[i_desc]).strip() if i_desc >= 0 and r[i_desc] is not None else ''),
+                    'qtyOnHand':   round(_num(r[i_qoh])) if i_qoh >= 0 else 0,
+                }
+    del rows  # free the big list promptly
+
+    # 4. Merge, classify, rank by sales ──────────────────────────────────────────
+    merged = []
+    for c in candidates:
+        div = c['divItemNo']
+        s = sales_by_div.get(div, {})
+        b = bin_by_div_bin.get((div, c['toBin'])) or bin_by_div.get(div, {})
+
+        sug = c['suggestedQty']
+        avail = c['availableInBulk']
+        if sug > 0 and avail < sug:
+            status = 'Check Bin'
+        elif sug > 0:
+            status = 'Replenish'
+        else:
+            status = 'OK'
+
+        merged.append({
+            'divItemNo':       div,
+            'description':     c['description'] or s.get('description') or b.get('description') or '',
+            'fromBin':         c['fromBin'],
+            'toBin':           c['toBin'] or b.get('bin', ''),
+            'currentQty':      b.get('currentQty', 0),
+            'minQty':          b.get('minQty', 0),
+            'maxQty':          b.get('maxQty', 0),
+            'suggestedQty':    sug,
+            'availableInBulk': avail,
+            'qtyOnHand':       s.get('qtyOnHand', 0),
+            'salesQty':        s.get('salesQty', 0),
+            'status':          status,
+        })
+
+    merged.sort(key=lambda x: x['salesQty'], reverse=True)
+    for i, row in enumerate(merged):
+        row['rank'] = i + 1
+
+    result = merged if top_n is None else merged[:top_n]
+
+    stats = {
+        'totalCandidates': len(merged),
+        'returned':        len(result),
+        'checkBinCount':   sum(1 for r in result if r['status'] == 'Check Bin'),
+        'totalSuggested':  sum(r['suggestedQty'] for r in result),
+        'matchedSales':    len(sales_by_div),
+        'topSeller':       (result[0]['description'] or result[0]['divItemNo']) if result else '',
+        'topSellerQty':    result[0]['salesQty'] if result else 0,
+    }
+
+    return jsonify({'rows': result, 'stats': stats})
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────

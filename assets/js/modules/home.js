@@ -72,6 +72,18 @@
           </div>
         </div>
 
+        <div class="home-card" data-target="browreplenishment">
+          <div class="home-card-icon" style="background:rgba(124,58,237,0.1);color:var(--predict)">⚡</div>
+          <div class="home-card-body">
+            <div class="home-card-title">B-Row Top Sellers</div>
+            <div class="home-card-desc">Prioritize replenishing the best-selling items on the B row. Joins Movement Worksheet, Items sales, and Bin Contents to rank restocks by sales.</div>
+          </div>
+          <div class="home-card-footer">
+            <span class="home-card-tag">3 exports</span>
+            <button class="btn btn-primary home-card-btn">Open →</button>
+          </div>
+        </div>
+
       </div>
     </div>`;
   }
